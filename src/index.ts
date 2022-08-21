@@ -1,14 +1,12 @@
 import express from "express";
 import { config } from "dotenv";
-import { jwt } from "twilio";
 import cors from "cors";
-
-import { checkAuth } from "./auth.js";
-
 config();
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+import { useAuth } from "./middlewares.js";
+import { checkAuth, generateAuthToken } from "./auth.js";
+import { generateTwilioToken } from "./twilio.js";
+
 
 const app = express();
 
@@ -16,10 +14,6 @@ app.use(express.json());
 app.use(cors());
 
 // routes
-app.get("/", (req, res) => {
-  res.send("hello video-mg");
-});
-
 app.post("/status-callback", (req, res) => {
   console.log("new status");
   console.log(req.body);
@@ -29,18 +23,35 @@ app.post("/status-callback", (req, res) => {
 
 app.post("/login", (req, res) => {
   const body = req.body;
-  console.log(body);
   const { username, password } = body;
   if (!username || !password) {
-    console.log("fail");
-
-    return res.status(401).json({ message: "incorrect username or password" });
+    return res.status(403).json({ message: "incorrect username or password" });
   }
   if (checkAuth(username, password)) {
-    return res.json({ token: "abc.123.xyz" });
+    const token = generateAuthToken(username);
+
+    return res.json({ token });
   } else {
-    return res.status(401).json({ message: "incorrect username or password" });
+    return res.status(403).json({ message: "incorrect username or password" });
   }
+});
+
+// authhenticated routes
+app.use(useAuth);
+
+app.get("/", (req, res) => {
+  const identity = req.user;
+  if (!identity) {
+    return res.status(401).json({ message: "unauthorized" });
+  }
+  let room = req.query.room;
+  if (!room || typeof room !== "string") {
+    room = "Default Room";
+  }
+
+  const token = generateTwilioToken(identity, room);
+
+  res.json({ token });
 });
 
 app.listen(3000, () => {
